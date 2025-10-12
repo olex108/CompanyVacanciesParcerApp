@@ -15,10 +15,8 @@ class BaseApiService(ABC):
 
     @abstractmethod
     def get_vacancies(
-        self, search_word: str,
-            search_area_name: str | None = None,
-            vacancies_count: int = 20
-    ):
+        self, search_word: str, search_area_name: str | None = None, vacancies_count: int = 20
+    ) -> list[Vacancy]:
         """Method to get vacancies by search parameters"""
 
 
@@ -29,16 +27,10 @@ class HeadHunterApiService(BaseApiService):
 
     url_vacancies: str = "https://api.hh.ru/vacancies"
     url_areas: str = "https://api.hh.ru/areas"
+    url_employers: str = "https://api.hh.ru/employers"
     vacancies: list[Vacancy]
 
-    def __init__(self) -> None:
-        self.__vacancies: list = []
-
-    @property
-    def vacancies(self) -> list[str]:
-        return [str(vacancy) for vacancy in self.__vacancies]
-
-    def __get_area_id(self, area_name: str) -> int | None:
+    def __get_area_id(self, area_name: str) -> int | str | None:
         """
         Method for search area id from Api HeadHunter request by area name.
         Ger response from method _get_api_response by url: "https://api.hh.ru/areas"
@@ -50,9 +42,9 @@ class HeadHunterApiService(BaseApiService):
 
         areas_data_list = self._get_api_response(self.url_areas, {})
 
-        return self.recurs_search_by_name(area_name, areas_data_list)
+        return self.__recurs_search_by_name(area_name, areas_data_list)
 
-    def recurs_search_by_name(self, keyword: str, data_list: list[dict]) -> str | None:
+    def __recurs_search_by_name(self, keyword: str, data_list: list[dict]) -> str | None:
         """
         Method to search id of area by area name in data list
 
@@ -70,12 +62,12 @@ class HeadHunterApiService(BaseApiService):
                     return item.get("id")
                 else:
                     if len(item.get("areas")) > 0:
-                        search_id = self.recurs_search_by_name(keyword, item.get("areas"))
+                        search_id = self.__recurs_search_by_name(keyword, item.get("areas"))
                         if search_id is not None:
                             return search_id
             return None
 
-    def _get_api_response(self, url: str, search_params: dict) -> Any:
+    def _get_api_response(self, url: str, search_params: dict | None) -> Any:
         """
         Method for connection to HeadHunter API
 
@@ -91,7 +83,11 @@ class HeadHunterApiService(BaseApiService):
             raise Exception("Connection Error (HeadHunter Api)")
 
     def get_vacancies(
-        self, search_word: str, search_area_name: str | None = None, vacancies_count: int = 20
+        self,
+        search_word: str | None = None,
+        search_area_name: str | None = None,
+        vacancies_count: int = 99,
+        employer_id: int | None = None,
     ) -> list[Vacancy]:
         """
         Method to get vacancies by search parameters.
@@ -100,10 +96,17 @@ class HeadHunterApiService(BaseApiService):
         :param search_word: string to search in vacation
         :param search_area_name: name of city or region
         :param vacancies_count: count of vacation
-        :return: data_json: list of vacations
+        :param employer_id: id of employer
+        :return: list of vacancies
         """
 
-        search_params = {"text": search_word, "area": None, "page": 0, "per_page": vacancies_count}
+        search_params = {
+            "employer_id": employer_id,
+            "text": search_word,
+            "area": None,
+            "page": 0,
+            "per_page": vacancies_count,
+        }
 
         # Add area param for search vacations if user add area name
         if search_area_name:
@@ -113,6 +116,7 @@ class HeadHunterApiService(BaseApiService):
         page_counter = 0
         per_page_num = vacancies_count
 
+        vacancies_list = []
         while True:
             if page_counter <= vacancies_count:
                 search_params["page"] = page_counter
@@ -123,12 +127,60 @@ class HeadHunterApiService(BaseApiService):
                     search_params["per_page"] = 100
                     per_page_num -= 100
 
-                vacancies_list = self._get_api_response(self.url_vacancies, search_params)["items"]
-                self.__vacancies.extend([Vacancy.new_vacancy(vacancy) for vacancy in vacancies_list])
+                page_vacancies_list = self._get_api_response(self.url_vacancies, search_params)["items"]
+                vacancies_list.extend([Vacancy.new_vacancy(vacancy) for vacancy in page_vacancies_list])
 
                 page_counter += 100
 
             else:
                 break
 
-        return self.__vacancies
+        return vacancies_list
+
+    def get_employer_data_by_name(
+        self,
+        search_word: str,
+    ) -> list[dict]:
+        """
+        Method to get information about employer by name.
+        Method call method _get_api_response to get employer data
+
+        :param search_word: string to search in vacation
+        :return: list of employers
+
+        """
+
+        search_params = {"text": search_word, "only_with_vacancies": True}
+
+        employers_list = self._get_api_response(self.url_employers, search_params)["items"]
+
+        employers_data_list = []
+
+        for employer in employers_list:
+            employer_data = {}
+            employer_data["name"] = employer["name"]
+            employer_data["hh_id"] = employer["id"]
+            description = self._get_api_response(f"{self.url_employers}/{employer["id"]}", None)["description"]
+            if description is not None:
+                if "</p>" in description:
+                    try:
+                        description = description.split("</p>")[0]
+                    except Exception:
+                        pass
+                    if ". " in description:
+                        try:
+                            description = description.split(". ")[0]
+                        except Exception:
+                            pass
+
+            employer_data["description"] = description
+            employer_data["url"] = employer["alternate_url"]
+            employers_data_list.append(employer_data)
+
+        return employers_data_list
+
+
+if __name__ == "__main__":
+    vacancies = HeadHunterApiService()
+    vac_list = vacancies.get_vacancies(employer_id=2104700)
+    print([vac.get_dict() for vac in vac_list])
