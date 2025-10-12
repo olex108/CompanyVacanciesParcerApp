@@ -21,8 +21,10 @@ class Vacancy:
         self.__description = description
 
     def __str__(self) -> str:
-        return (f"Название: {self.__name}, ссылка: {self.__link}, зарплата: {self.__salary["from"]} - "
-                f"{self.__salary["to"]}, описание: {self.__description}")
+        return (
+            f"Название: {self.__name}, ссылка: {self.__link}, зарплата: {self.__salary["from"]} - "
+            f"{self.__salary["to"]}, описание: {self.__description}"
+        )
 
     def __get_salary_for_compare(self, compare_obj: Any) -> Any:
         """
